@@ -263,6 +263,8 @@ namespace Oxide.Plugins
 
         #region Fields
 
+        private static DateTime _lastUpdateCheckTime = DateTime.MinValue;
+        private static bool _updateJustApplied = false;
         private List<Vector3> outpostSpawns = new List<Vector3>();
         private List<Vector3> banditSpawns = new List<Vector3>();
         private Dictionary<ulong, Timer> teleportTimers = new Dictionary<ulong, Timer>();
@@ -336,6 +338,11 @@ namespace Oxide.Plugins
 
         private void CheckForUpdates()
         {
+            if (_updateJustApplied && (DateTime.Now - _lastUpdateCheckTime).TotalSeconds < 60)
+            {
+                Puts("[RecallHub] Update just applied, skipping check for 60 seconds.");
+                return;
+            }
             string sourceUrl = configData?.Update?.SourceUrl?.Trim();
             if (string.IsNullOrWhiteSpace(sourceUrl))
             {
@@ -428,6 +435,12 @@ namespace Oxide.Plugins
                 return;
             }
 
+            if (downloadedVersion <= localVersion)
+            {
+                Puts(Lang("UpdateCurrent", "0", Lang("Prefix", "0"), localVersion));
+                return;
+            }
+
             string pluginPath = Path.Combine(Interface.Oxide.RootDirectory, "plugins", $"{Name}.cs");
             string directory = Path.GetDirectoryName(pluginPath);
 
@@ -448,13 +461,14 @@ namespace Oxide.Plugins
             try
             {
                 // Writing to a temporary file, then replacing it
-                string tempPath = pluginPath + ".tmp";
+                sstring tempPath = pluginPath + ".tmp";
                 File.WriteAllText(tempPath, sourceContent, new UTF8Encoding(false));
-
                 if (File.Exists(pluginPath))
                     File.Delete(pluginPath);
-
                 File.Move(tempPath, pluginPath);
+                
+                _updateJustApplied = true;
+                _lastUpdateCheckTime = DateTime.Now;
 
                 Puts(Lang("UpdateDownloaded", "0", Lang("Prefix", "0"), pluginPath));
                 ScheduleReload();
