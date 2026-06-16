@@ -14,11 +14,11 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("RecallHub", "whitecristafer", "1.0.0")]
+    [Info("RecallHub", "whitecristafer", "1.0.1")]
     [Description("Teleport to Outpost and Bandit Camp with custom spawn points")]
     public class RecallHub : RustPlugin
     {
-        private const string PluginVersion = "1.0.0";
+        private const string PluginVersion = "1.0.1";
         private const string DefaultUpdateSourceUrl = "https://raw.githubusercontent.com/whitecristafer/oxide-RecallHub/main/RecallHub.cs";
 
         [PluginReference]
@@ -473,7 +473,7 @@ namespace Oxide.Plugins
             if (string.IsNullOrWhiteSpace(source))
                 return null;
 
-            // Main lookup: [Info("RecallHub", "whitecristafer", "1.0.0")]
+            // Main lookup: [Info("RecallHub", "whitecristafer", "1.0.1")]
             var match = Regex.Match(
                 source,
                 @"\[Info\(\s*""RecallHub""\s*,\s*""[^""]+""\s*,\s*""(?<version>[^""]+)""\s*\)\]",
@@ -890,29 +890,10 @@ namespace Oxide.Plugins
 
             player.EnsureDismounted();
             player.SetParent(null, true, true);
-
             player.Teleport(position);
-
-            if (player.net?.connection != null)
-            {
-                player.ClientRPCPlayer(null, player, "StartLoading_Quick", true);
-                player.ClientRPCPlayer(null, player, "ForcePositionTo", position);
-                player.SetPlayerFlag(BasePlayer.PlayerFlags.ReceivingSnapshot, true);
-            }
-
+            // However, these two calls are sufficient to update the network.
             player.UpdateNetworkGroup();
             player.SendNetworkUpdateImmediate();
-            player.ClearEntityQueue();
-            player.ForceUpdateTriggers();
-
-            timer.Once(0.1f, () =>
-            {
-                if (player != null && player.IsValid())
-                {
-                    player.ClientRPCPlayer(null, player, "StartLoading_Quick", false);
-                    player.SetPlayerFlag(BasePlayer.PlayerFlags.ReceivingSnapshot, false);
-                }
-            });
         }
 
         private void CancelTeleport(BasePlayer player, string reason)
