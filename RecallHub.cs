@@ -328,7 +328,7 @@ namespace Oxide.Plugins
             Puts("==================================================");
             Puts($"{prefix} RecallHub v{PluginVersion} loaded.");
             Puts($"{prefix} Teleport system initialized.");
-            Puts($"{prefix} Project page: infunv.ru");
+            Puts($"{prefix} Sponsor: infunv.ru");
             Puts("==================================================");
         }
 
@@ -421,8 +421,25 @@ namespace Oxide.Plugins
             try
             {
                 File.WriteAllText(pluginPath, sourceContent, new UTF8Encoding(false));
+
+                timer.Once(3f, () =>
+                {
+                    Interface.Oxide.RootPluginManager.ReloadPlugin(Name);
+                });
                 Puts(Lang("UpdateDownloaded", "0", Lang("Prefix", "0"), pluginPath));
-                PrintWarning("[RecallHub] Reload the plugin or restart the server to apply the new version.");
+                Puts("[RecallHub] Applying update...");
+
+                timer.Once(3f, () =>
+                {
+                    try
+                    {
+                        Server.Command($"oxide.reload {Name}");
+                    }
+                    catch (Exception ex)
+                    {
+                        PrintError($"[RecallHub] Failed to reload plugin: {ex.Message}");
+                    }
+                });
             }
             catch (Exception ex)
             {
