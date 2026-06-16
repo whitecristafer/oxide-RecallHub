@@ -10,6 +10,7 @@ using UnityEngine;
 using Rust;
 using Oxide.Core;
 using Oxide.Core.Plugins;
+using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
@@ -327,9 +328,9 @@ namespace Oxide.Plugins
         {
             var prefix = Lang("Prefix", "0");
             Puts("==================================================");
-            Puts($"{prefix} RecallHub v{PluginVersion} loaded.");
-            Puts($"{prefix} Teleport system initialized.");
-            Puts($"{prefix} Sponsor: infunv.ru");
+            Puts($"RecallHub v{PluginVersion} loaded.");
+            Puts($"Teleport system initialized.");
+            Puts($"Sponsor: infunv.ru");
             Puts("==================================================");
         }
 
@@ -394,7 +395,7 @@ namespace Oxide.Plugins
                 Puts(Lang("UpdateAvailable", "0", Lang("Prefix", "0"), localVersion, remoteVersionRaw));
 
                 TrySaveUpdate(response, remoteVersionRaw);
-            }, this, RequestMethod.GET, headers, configData.Update.TimeoutSeconds);
+            }, this, Oxide.Core.Libraries.RequestMethod.GET, headers, configData.Update.TimeoutSeconds);
         }
 
         private void TrySaveUpdate(string sourceContent, string remoteVersionRaw)
@@ -409,9 +410,19 @@ namespace Oxide.Plugins
                 return;
             }
 
-            if (!TryParseStableVersion(downloadedVersionRaw, out var downloadedVersion) ||
-                !TryParseStableVersion(PluginVersion, out var localVersion) ||
-                downloadedVersion <= localVersion)
+            if (!TryParseStableVersion(downloadedVersionRaw, out var downloadedVersion))
+            {
+                PrintWarning("[RecallHub] Downloaded version is invalid.");
+                return;
+            }
+
+            if (!TryParseStableVersion(PluginVersion, out var localVersion))
+            {
+                PrintWarning("[RecallHub] Local version is invalid.");
+                return;
+            }
+
+            if (downloadedVersion <= localVersion)
             {
                 Puts(Lang("UpdateCurrent", "0", Lang("Prefix", "0"), localVersion));
                 return;
@@ -496,7 +507,7 @@ namespace Oxide.Plugins
                 RegexOptions.IgnoreCase);
         }
 
-        private bool TryParseStableVersion(string versionText, out Version version)
+        private bool TryParseStableVersion(string versionText, out System.Version version)
         {
             version = null;
 
@@ -514,7 +525,15 @@ namespace Oxide.Plugins
             if (!Regex.IsMatch(versionText, @"^\d+(\.\d+){1,3}$"))
                 return false;
 
-            return Version.TryParse(versionText, out version);
+            try
+            {
+                version = new System.Version(versionText);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         #endregion
@@ -574,27 +593,41 @@ namespace Oxide.Plugins
 
             foreach (var monument in UnityEngine.Object.FindObjectsOfType<MonumentInfo>())
             {
-                string monumentName = monument.name.ToLowerInvariant();
-
-                if (!monumentName.Contains("compound") && !monumentName.Contains("outpost"))
+                string name = monument.name.ToLowerInvariant();
+                if (!name.Contains("compound") && !name.Contains("outpost"))
                     continue;
 
+                // (VendingMachine)
                 List<BaseEntity> entities = new List<BaseEntity>();
-                Vis.Entities(monument.transform.position, 25f, entities);
+                Vis.Entities(monument.transform.position, 30f, entities);
 
                 foreach (var entity in entities)
                 {
-                    if (entity == null || string.IsNullOrWhiteSpace(entity.name))
-                        continue;
+                    if (entity == null) continue;
 
-                    if (!entity.name.ToLowerInvariant().Contains("chair"))
-                        continue;
+                    VendingMachine vm = entity as VendingMachine;
+                    if (vm != null)
+                    {
+                        // Position in front of the machine (taking into account its direction)
+                        Vector3 pos = vm.transform.position + vm.transform.forward * 1.5f;
+                        pos.y += 0.5f; // lifting by half a meter above the ground
 
-                    Vector3 pos = entity.transform.position;
-                    pos.y += 1f;
+                        // Adjusting according to the relief
+                        pos = GetGroundPosition(pos);
 
-                    if (!ContainsApprox(spawns, pos))
-                        spawns.Add(pos);
+                        if (!ContainsApprox(spawns, pos))
+                            spawns.Add(pos);
+                    }
+                }
+
+                // If there are no automatic machines, we use the monument center
+                if (spawns.Count == 0)
+                {
+                    Vector3 center = monument.transform.position;
+                    center.y += 2f;
+                    center = GetGroundPosition(center);
+                    spawns.Add(center);
+                    PrintWarning($"[RecallHub] No VendingMachine found in Outpost, using center point: {center}");
                 }
             }
 
@@ -607,21 +640,54 @@ namespace Oxide.Plugins
 
             foreach (var monument in UnityEngine.Object.FindObjectsOfType<MonumentInfo>())
             {
-                string monumentName = monument.name.ToLowerInvariant();
-
-                if (!monumentName.Contains("bandit"))
+                string name = monument.name.ToLowerInvariant();
+                if (!name.Contains("bandit"))
                     continue;
 
-                Vector3 basePos = monument.transform.position;
-                Vector3 pos = basePos + (-monument.transform.right * -50.75f);
-                pos += monument.transform.forward * -21.75f;
-                pos += Vector3.up * 7f;
+                // Looking for vending machines
+                List<BaseEntity> entities = new List<BaseEntity>();
+                Vis.Entities(monument.transform.position, 30f, entities);
 
-                if (!ContainsApprox(spawns, pos))
+                foreach (var entity in entities)
+                {
+                    VendingMachine vm = entity as VendingMachine;
+                    if (vm != null)
+                    {
+                        Vector3 pos = vm.transform.position + vm.transform.forward * 1.5f;
+                        pos.y += 0.5f;
+                        pos = GetGroundPosition(pos);
+                        if (!ContainsApprox(spawns, pos))
+                            spawns.Add(pos);
+                    }
+                }
+
+                if (spawns.Count == 0)
+                {
+                    // Using the old calculated position, but adjusting the height
+                    Vector3 basePos = monument.transform.position;
+                    Vector3 pos = basePos + (-monument.transform.right * -50.75f);
+                    pos += monument.transform.forward * -21.75f;
+                    pos.y += 2f;
+                    pos = GetGroundPosition(pos);
                     spawns.Add(pos);
+                    PrintWarning($"[RecallHub] No VendingMachine found in Bandit Camp, using calculated point: {pos}");
+                }
             }
 
             return spawns;
+        }
+
+        // Helper method for finding a point on the ground surface
+        private Vector3 GetGroundPosition(Vector3 pos)
+        {
+            RaycastHit hit;
+            // Fire a ray from above down
+            Vector3 origin = pos + Vector3.up * 20f;
+            if (Physics.Raycast(origin, Vector3.down, out hit, 40f, LayerMask.GetMask("Terrain", "World")))
+            {
+                return hit.point + Vector3.up * 0.5f; // lifting by half a meter above the ground
+            }
+            return pos; // if not found — leave as is
         }
 
         private bool ContainsApprox(List<Vector3> list, Vector3 value, float tolerance = 0.05f)
@@ -736,7 +802,7 @@ namespace Oxide.Plugins
 
             if (player.IsHostile())
             {
-                double remaining = player.State.unHostileTimestamp - Time.realtimeSinceStartup;
+                double remaining = player.State.unHostileTimestamp - UnityEngine.Time.realtimeSinceStartup;
                 if (remaining > 0)
                     return Lang("Error: Hostile", player.UserIDString, FormatDuration((int)remaining));
             }
@@ -768,7 +834,7 @@ namespace Oxide.Plugins
             int countdown = town == "outpost" ? configData.OutpostCountdown : configData.BanditCountdown;
             ulong userId = player.userID;
 
-            Timer timer = timer.Once(countdown, () =>
+            Timer timerObj = timer.Once(countdown, () =>
             {
                 if (player == null || !player.IsValid() || player.IsDestroyed)
                     return;
@@ -814,7 +880,7 @@ namespace Oxide.Plugins
                 player.ChatMessage(Lang(msgKey, player.UserIDString, Lang("Prefix", player.UserIDString)));
             });
 
-            teleportTimers[userId] = timer;
+            teleportTimers[userId] = timerObj;
         }
 
         private void SafeTeleport(BasePlayer player, Vector3 position)
