@@ -429,10 +429,32 @@ namespace Oxide.Plugins
             }
 
             string pluginPath = Path.Combine(Interface.Oxide.RootDirectory, "plugins", $"{Name}.cs");
+            string directory = Path.GetDirectoryName(pluginPath);
+
+            // Create a folder if it doesn't exist
+            if (!Directory.Exists(directory))
+            {
+                try
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                catch (Exception ex)
+                {
+                    PrintWarning($"[RecallHub] Failed to create directory: {ex.Message}");
+                    return;
+                }
+            }
 
             try
             {
-                File.WriteAllText(pluginPath, sourceContent, new UTF8Encoding(false));
+                // Writing to a temporary file, then replacing it
+                string tempPath = pluginPath + ".tmp";
+                File.WriteAllText(tempPath, sourceContent, new UTF8Encoding(false));
+
+                if (File.Exists(pluginPath))
+                    File.Delete(pluginPath);
+
+                File.Move(tempPath, pluginPath);
 
                 Puts(Lang("UpdateDownloaded", "0", Lang("Prefix", "0"), pluginPath));
                 ScheduleReload();
