@@ -14,7 +14,7 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("RecallHub", "whitecristafer", "1.0.1")]
+    [Info("RecallHub", "whitecristafer", "1.0.0")]
     [Description("Teleport to Outpost and Bandit Camp with custom spawn points")]
     public class RecallHub : RustPlugin
     {
@@ -461,7 +461,7 @@ namespace Oxide.Plugins
             try
             {
                 // Writing to a temporary file, then replacing it
-                sstring tempPath = pluginPath + ".tmp";
+                string tempPath = pluginPath + ".tmp";
                 File.WriteAllText(tempPath, sourceContent, new UTF8Encoding(false));
                 if (File.Exists(pluginPath))
                     File.Delete(pluginPath);
