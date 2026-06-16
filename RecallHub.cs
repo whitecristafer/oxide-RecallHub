@@ -265,6 +265,7 @@ namespace Oxide.Plugins
         private List<Vector3> outpostSpawns = new List<Vector3>();
         private List<Vector3> banditSpawns = new List<Vector3>();
         private Dictionary<ulong, Timer> teleportTimers = new Dictionary<ulong, Timer>();
+        private bool updateReloadScheduled;
 
         #endregion
 
@@ -422,29 +423,38 @@ namespace Oxide.Plugins
             {
                 File.WriteAllText(pluginPath, sourceContent, new UTF8Encoding(false));
 
-                timer.Once(3f, () =>
-                {
-                    Interface.Oxide.RootPluginManager.ReloadPlugin(Name);
-                });
                 Puts(Lang("UpdateDownloaded", "0", Lang("Prefix", "0"), pluginPath));
-                Puts("[RecallHub] Applying update...");
-
-                timer.Once(3f, () =>
-                {
-                    try
-                    {
-                        Server.Command($"oxide.reload {Name}");
-                    }
-                    catch (Exception ex)
-                    {
-                        PrintError($"[RecallHub] Failed to reload plugin: {ex.Message}");
-                    }
-                });
+                ScheduleReload();
             }
             catch (Exception ex)
             {
                 PrintWarning($"{Lang("UpdateWriteFailed", "0", Lang("Prefix", "0"))} {ex.Message}");
             }
+        }
+
+        private void ScheduleReload()
+        {
+            if (updateReloadScheduled)
+                return;
+
+            updateReloadScheduled = true;
+            Puts("[RecallHub] Applying update...");
+
+            timer.Once(3f, () =>
+            {
+                try
+                {
+                    Server.Command($"oxide.reload {Name}");
+                }
+                catch (Exception ex)
+                {
+                    PrintError($"[RecallHub] Failed to reload plugin: {ex.Message}");
+                }
+                finally
+                {
+                    updateReloadScheduled = false;
+                }
+            });
         }
 
         private string ExtractVersionFromSource(string source)
