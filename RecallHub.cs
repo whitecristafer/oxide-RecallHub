@@ -14,11 +14,11 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("RecallHub", "whitecristafer", "1.0.1")]
+    [Info("RecallHub", "whitecristafer", "1.0.2")]
     [Description("Teleport to Outpost and Bandit Camp with custom spawn points")]
     public class RecallHub : RustPlugin
     {
-        private const string PluginVersion = "1.0.1";
+        private const string PluginVersion = "1.0.2";
         private const string DefaultUpdateSourceUrl = "https://raw.githubusercontent.com/whitecristafer/oxide-RecallHub/main/RecallHub.cs";
 
         [PluginReference]
@@ -435,16 +435,9 @@ namespace Oxide.Plugins
                 return;
             }
 
-            if (downloadedVersion <= localVersion)
-            {
-                Puts(Lang("UpdateCurrent", "0", Lang("Prefix", "0"), localVersion));
-                return;
-            }
-
-            string pluginPath = Path.Combine(Interface.Oxide.RootDirectory, "plugins", $"{Name}.cs");
+            string pluginPath = Path.Combine(Interface.Oxide.PluginDirectory, $"{Name}.cs");
             string directory = Path.GetDirectoryName(pluginPath);
 
-            // Create a folder if it doesn't exist
             if (!Directory.Exists(directory))
             {
                 try
@@ -460,18 +453,14 @@ namespace Oxide.Plugins
 
             try
             {
-                // Writing to a temporary file, then replacing it
-                string tempPath = pluginPath + ".tmp";
-                File.WriteAllText(tempPath, sourceContent, new UTF8Encoding(false));
-                if (File.Exists(pluginPath))
-                    File.Delete(pluginPath);
-                File.Move(tempPath, pluginPath);
-                
+                // Direct file overwrite (without deleting or moving)
+                File.WriteAllText(pluginPath, sourceContent, new UTF8Encoding(false));
+
                 _updateJustApplied = true;
                 _lastUpdateCheckTime = DateTime.Now;
 
                 Puts(Lang("UpdateDownloaded", "0", Lang("Prefix", "0"), pluginPath));
-                ScheduleReload();
+                Puts("[RecallHub] Update saved. Waiting for Oxide compilation...");
             }
             catch (Exception ex)
             {
@@ -509,7 +498,7 @@ namespace Oxide.Plugins
             if (string.IsNullOrWhiteSpace(source))
                 return null;
 
-            // Main lookup: [Info("RecallHub", "whitecristafer", "1.0.1")]
+            // Main lookup: [Info("RecallHub", "whitecristafer", "1.0.2")]
             var match = Regex.Match(
                 source,
                 @"\[Info\(\s*""RecallHub""\s*,\s*""[^""]+""\s*,\s*""(?<version>[^""]+)""\s*\)\]",
