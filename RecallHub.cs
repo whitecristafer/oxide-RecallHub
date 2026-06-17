@@ -14,11 +14,11 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("RecallHub", "whitecristafer", "1.0.2")]
+    [Info("RecallHub", "whitecristafer", "1.0.3")]
     [Description("Teleport to Outpost and Bandit Camp with custom spawn points")]
     public class RecallHub : RustPlugin
     {
-        private const string PluginVersion = "1.0.2";
+        private const string PluginVersion = "1.0.3";
         private const string DefaultUpdateSourceUrl = "https://raw.githubusercontent.com/whitecristafer/oxide-RecallHub/main/RecallHub.cs";
 
         [PluginReference]
@@ -498,7 +498,7 @@ namespace Oxide.Plugins
             if (string.IsNullOrWhiteSpace(source))
                 return null;
 
-            // Main lookup: [Info("RecallHub", "whitecristafer", "1.0.2")]
+            // Main lookup: [Info("RecallHub", "whitecristafer", "1.0.3")]
             var match = Regex.Match(
                 source,
                 @"\[Info\(\s*""RecallHub""\s*,\s*""[^""]+""\s*,\s*""(?<version>[^""]+)""\s*\)\]",
@@ -622,30 +622,21 @@ namespace Oxide.Plugins
                 if (!name.Contains("compound") && !name.Contains("outpost"))
                     continue;
 
-                // (VendingMachine)
                 List<BaseEntity> entities = new List<BaseEntity>();
-                Vis.Entities(monument.transform.position, 30f, entities);
+                Vis.Entities(monument.transform.position, 150f, entities); // Increased radius to 150!
 
                 foreach (var entity in entities)
                 {
-                    if (entity == null) continue;
-
-                    VendingMachine vm = entity as VendingMachine;
-                    if (vm != null)
+                    if (entity is VendingMachine vm)
                     {
-                        // Position in front of the machine (taking into account its direction)
-                        Vector3 pos = vm.transform.position + vm.transform.forward * 1.5f;
-                        pos.y += 0.5f; // lifting by half a meter above the ground
-
-                        // Adjusting according to the relief
-                        pos = GetGroundPosition(pos);
-
-                        if (!ContainsApprox(spawns, pos))
-                            spawns.Add(pos);
+                        Vector3? safePos = FindSafeSpawnNear(vm.transform.position, vm.transform.forward);
+                        if (safePos.HasValue && !ContainsApprox(spawns, safePos.Value))
+                        {
+                            spawns.Add(safePos.Value);
+                        }
                     }
                 }
 
-                // If there are no automatic machines, we use the monument center
                 if (spawns.Count == 0)
                 {
                     Vector3 center = monument.transform.position;
@@ -669,26 +660,23 @@ namespace Oxide.Plugins
                 if (!name.Contains("bandit"))
                     continue;
 
-                // Looking for vending machines
                 List<BaseEntity> entities = new List<BaseEntity>();
-                Vis.Entities(monument.transform.position, 30f, entities);
+                Vis.Entities(monument.transform.position, 150f, entities); // Increased the radius
 
                 foreach (var entity in entities)
                 {
-                    VendingMachine vm = entity as VendingMachine;
-                    if (vm != null)
+                    if (entity is VendingMachine vm)
                     {
-                        Vector3 pos = vm.transform.position + vm.transform.forward * 1.5f;
-                        pos.y += 0.5f;
-                        pos = GetGroundPosition(pos);
-                        if (!ContainsApprox(spawns, pos))
-                            spawns.Add(pos);
+                        Vector3? safePos = FindSafeSpawnNear(vm.transform.position, vm.transform.forward);
+                        if (safePos.HasValue && !ContainsApprox(spawns, safePos.Value))
+                        {
+                            spawns.Add(safePos.Value);
+                        }
                     }
                 }
 
                 if (spawns.Count == 0)
                 {
-                    // Using the old calculated position, but adjusting the height
                     Vector3 basePos = monument.transform.position;
                     Vector3 pos = basePos + (-monument.transform.right * -50.75f);
                     pos += monument.transform.forward * -21.75f;
@@ -703,16 +691,39 @@ namespace Oxide.Plugins
         }
 
         // Helper method for finding a point on the ground surface
-        private Vector3 GetGroundPosition(Vector3 pos)
+       private Vector3 GetGroundPosition(Vector3 pos)
         {
             RaycastHit hit;
-            // Fire a ray from above down
-            Vector3 origin = pos + Vector3.up * 20f;
-            if (Physics.Raycast(origin, Vector3.down, out hit, 40f, LayerMask.GetMask("Terrain", "World")))
+            Vector3 origin = pos + Vector3.up * 5f; 
+            int mask = LayerMask.GetMask("Terrain", "World", "Construction", "Deployed");
+
+            if (Physics.Raycast(origin, Vector3.down, out hit, 10f, mask))
             {
-                return hit.point + Vector3.up * 0.5f; // lifting by half a meter above the ground
+                return hit.point;
             }
-            return pos; // if not found — leave as is
+            return pos; 
+        }
+
+        private Vector3? FindSafeSpawnNear(Vector3 startPos, Vector3 forward)
+        {
+            float[] distances = { 1.5f, 2.0f, 2.5f, 3.0f }; 
+            int mask = LayerMask.GetMask("Construction", "World", "Terrain", "Deployed");
+
+            foreach (var dist in distances)
+            {
+                Vector3 pos = startPos + forward * dist;
+                pos.y += 0.5f;
+                pos = GetGroundPosition(pos);
+
+                Vector3 bottom = pos + new Vector3(0, 0.5f, 0);
+                Vector3 top = pos + new Vector3(0, 1.5f, 0);
+
+                if (!Physics.CheckCapsule(bottom, top, 0.45f, mask))
+                {
+                    return pos; 
+                }
+            }
+            return null;
         }
 
         private bool ContainsApprox(List<Vector3> list, Vector3 value, float tolerance = 0.05f)
@@ -913,12 +924,35 @@ namespace Oxide.Plugins
             if (player == null || !player.IsValid())
                 return;
 
+            // Resetting the current states to avoid bugs
+            if (player.IsSleeping()) player.EndSleeping();
             player.EnsureDismounted();
             player.SetParent(null, true, true);
+
+            // Performing a physical transfer
             player.Teleport(position);
-            // However, these two calls are sufficient to update the network.
+
+            // Forcibly update triggers (so that the Safe Zone applies instantly and the turrets don't kill you)
+            player.ForceUpdateTriggers();
+
+            // We put the player to sleep for a second so that the client can load the floor textures
+            if (player.IsConnected)
+            {
+                player.StartSleeping();
+                timer.Once(1.5f, () =>
+                {
+                    if (player != null && player.IsSleeping())
+                    {
+                        player.EndSleeping();
+                    }
+                });
+            }
+
+            // Synchronize the position over the network
             player.UpdateNetworkGroup();
             player.SendNetworkUpdateImmediate();
+            player.ClientRPCPlayer(null, player, "ForcePositionTo", position);
+            player.ClearEntityQueue();
         }
 
         private void CancelTeleport(BasePlayer player, string reason)
