@@ -1,13 +1,5 @@
 # RecallHub
 
-[English](README.md) | [Русский](Readme.ru.md)
-
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](#)
-[![Status](https://img.shields.io/badge/status-stable-green.svg)](#)
-[![Rust](https://img.shields.io/badge/game-Rust-orange.svg)](#)
-[![Oxide](https://img.shields.io/badge/framework-Oxide%20%2F%20uMod-yellow.svg)](#)
-[![Language](https://img.shields.io/badge/language-C%23-239120.svg)](#)
-
 RecallHub is a Rust plugin for Oxide/uMod that provides controlled teleportation to key monuments such as Outpost and Bandit Camp, with configurable spawn points, cooldowns, countdowns, damage cancellation, and automatic update checks from a GitHub repository.
 
 ## Overview
