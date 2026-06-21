@@ -153,4 +153,4 @@ RecallHub writes clear startup and update information into the server console fo
 
 ## License
 
-Choose a license that matches your project policy before public release.
+Apache
