@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json;
 using UnityEngine;
 using Rust;
 using Oxide.Core;
@@ -14,11 +15,13 @@ using Oxide.Core.Libraries;
 
 namespace Oxide.Plugins
 {
-    [Info("RecallHub", "whitecristafer", "1.0.3")]
+    [Info("RecallHub", "whitecristafer", "1.0.4")]
     [Description("Teleport to Outpost and Bandit Camp with custom spawn points")]
     public class RecallHub : RustPlugin
     {
-        private const string PluginVersion = "1.0.3";
+        private const string PluginVersion = "1.0.4";
+        private const ulong PluginIcon = 76561198209258869;
+        private const string Prefix = "<size=12><color=#66ccff><b>RecallHub</b></color></size> |";
         private const string DefaultUpdateSourceUrl = "https://raw.githubusercontent.com/whitecristafer/oxide-RecallHub/main/RecallHub.cs";
 
         [PluginReference]
@@ -45,10 +48,10 @@ namespace Oxide.Plugins
 
             public float TeleportOffsetY { get; set; } = 1.0f;
 
-            public int OutpostCooldown { get; set; } = 30;
-            public int OutpostCountdown { get; set; } = 30;
-            public int BanditCooldown { get; set; } = 30;
-            public int BanditCountdown { get; set; } = 30;
+            public int OutpostCooldown { get; set; } = 15;
+            public int OutpostCountdown { get; set; } = 15;
+            public int BanditCooldown { get; set; } = 15;
+            public int BanditCountdown { get; set; } = 15;
 
             public string OutpostCommand { get; set; } = "otp";
             public string BanditCommand { get; set; } = "btp";
@@ -163,92 +166,170 @@ namespace Oxide.Plugins
 
         #region Localization
 
+        private Dictionary<string, string> _enMessages;
+        private Dictionary<string, string> _ruMessages;
+
         protected override void LoadDefaultMessages()
         {
-            lang.RegisterMessages(new Dictionary<string, string>
+            _enMessages = BuildEnglishMessages();
+            _ruMessages = BuildRussianMessages();
+            lang.RegisterMessages(_enMessages, this, "en");
+            lang.RegisterMessages(_ruMessages, this, "ru");
+        }
+
+        private void RefreshLanguageFiles()
+        {
+            _enMessages ??= BuildEnglishMessages();
+            _ruMessages ??= BuildRussianMessages();
+
+            try
             {
-                ["Prefix"] = "<size=12><color=#9966cc><b>[RecallHub]</b></color></size>",
-                ["OutpostTeleport"] = "{0} Teleporting to Outpost in {1} seconds.\nType /{2} to cancel.",
-                ["BanditTeleport"] = "{0} Teleporting to Bandit Camp in {1} seconds.\nType /{2} to cancel.",
-                ["TeleportSuccessOutpost"] = "{0} You have successfully teleported to Outpost.",
-                ["TeleportSuccessBandit"] = "{0} You have successfully teleported to Bandit Camp.",
-                ["NoActiveTeleport"] = "{0} You are not preparing to teleport.\nType /{1} for Outpost\nType /{2} for Bandit Camp.",
-                ["AlreadyTeleporting"] = "{0} You are already preparing to teleport.",
-
-                ["Error: Seated"] = "You cannot teleport while seated.",
-                ["Error: NoBuildingPrivilege"] = "You cannot teleport without building privilege.",
-                ["Error: Wounded"] = "You cannot teleport while wounded.",
-                ["Error: Mounted"] = "You cannot teleport while mounted.",
-                ["Error: CargoShip"] = "You cannot teleport from the Cargo Ship.",
-                ["Error: Hostile"] = "You cannot teleport while hostile.\nHostility will reset in {0}.",
-                ["Error: Cooldown"] = "You cannot teleport yet.\nAvailable in {0}.",
-                ["Error: RaidBlocked"] = "You cannot teleport while raid blocked.",
-                ["Error: CombatBlocked"] = "You cannot teleport while combat blocked.",
-
-                ["TeleportCancelled"] = "{0} Teleport cancelled.",
-                ["TeleportCancelledPlayerDamage"] = "{0} Teleport cancelled due to player damage.",
-                ["TeleportCancelledFallDamage"] = "{0} Teleport cancelled due to fall damage.",
-                ["TeleportCancelledDamage"] = "{0} Teleport cancelled due to damage.",
-
-                ["OutpostNotFound"] = "{0} Outpost spawn points were not found.",
-                ["BanditNotFound"] = "{0} Bandit Camp spawn points were not found.",
-                ["NoPermission"] = "{0} You do not have permission to use this command.",
-
-                ["UpdateCheckStart"] = "{0} Checking for updates...",
-                ["UpdateCheckFailed"] = "{0} Update check failed.",
-                ["UpdateRemoteInvalid"] = "{0} Remote build is not a stable release and was ignored.",
-                ["UpdateLocalInvalid"] = "{0} Local version is invalid. Update check skipped.",
-                ["UpdateCurrent"] = "{0} You are already running the latest stable version: {1}.",
-                ["UpdateAvailable"] = "{0} New version found: {1} -> {2}. Downloading now...",
-                ["UpdateDownloaded"] = "{0} Update downloaded successfully. Saved to: {1}",
-                ["UpdateWriteFailed"] = "{0} Failed to write the update file.",
-                ["UpdateBanner"] = "{0} Project page: infunv.ru"
-            }, this, "en");
-
-            lang.RegisterMessages(new Dictionary<string, string>
+                string langRoot = Path.Combine(Interface.Oxide.RootDirectory, "lang");
+                WriteLanguageFile(Path.Combine(langRoot, "en", $"{Name}.json"), _enMessages);
+                WriteLanguageFile(Path.Combine(langRoot, "ru", $"{Name}.json"), _ruMessages);
+            }
+            catch (Exception ex)
             {
-                ["Prefix"] = "<size=12><color=#9966cc><b>[RecallHub]</b></color></size>",
-                ["OutpostTeleport"] = "{0} Телепортация на Аванпост через {1} секунд.\nВведите /{2}, чтобы отменить телепортацию.",
-                ["BanditTeleport"] = "{0} Телепортация в Лагерь бандитов через {1} секунд.\nВведите /{2}, чтобы отменить телепортацию.",
-                ["TeleportSuccessOutpost"] = "{0} Вы успешно телепортировались на Аванпост.",
-                ["TeleportSuccessBandit"] = "{0} Вы успешно телепортировались в Лагерь бандитов.",
-                ["NoActiveTeleport"] = "{0} Вы не собираетесь телепортироваться.\nВведите /{1} для Аванпоста\nВведите /{2} для Лагеря бандитов.",
-                ["AlreadyTeleporting"] = "{0} Вы уже собираетесь телепортироваться.",
+                PrintWarning($"[RecallHub] Failed to refresh language files: {ex.Message}");
+            }
+        }
 
-                ["Error: Seated"] = "Вы не можете телепортироваться, сидя в транспорте.",
-                ["Error: NoBuildingPrivilege"] = "Вы не можете телепортироваться без привилегии на строительство.",
-                ["Error: Wounded"] = "Вы не можете телепортироваться, будучи раненым.",
-                ["Error: Mounted"] = "Вы не можете телепортироваться, находясь верхом.",
-                ["Error: CargoShip"] = "Вы не можете телепортироваться с грузового корабля.",
-                ["Error: Hostile"] = "Вы не можете телепортироваться, пока отмечены как враждебный.\nСтатус враждебности снимут через {0}.",
-                ["Error: Cooldown"] = "Вы не можете телепортироваться ещё.\nТелепортация станет доступна через {0}.",
-                ["Error: RaidBlocked"] = "Вы не можете телепортироваться во время рейд-блока.",
-                ["Error: CombatBlocked"] = "Вы не можете телепортироваться во время боевого блока.",
+        private void WriteLanguageFile(string path, Dictionary<string, string> messages)
+        {
+            string directory = Path.GetDirectoryName(path);
+            if (!Directory.Exists(directory))
+                Directory.CreateDirectory(directory);
 
-                ["TeleportCancelled"] = "{0} Вы отменили телепортацию.",
-                ["TeleportCancelledPlayerDamage"] = "{0} Телепортация отменена из-за получения урона от игрока.",
-                ["TeleportCancelledFallDamage"] = "{0} Телепортация отменена из-за урона от падения.",
-                ["TeleportCancelledDamage"] = "{0} Телепортация отменена, так как вы получили урон.",
+            File.WriteAllText(path, JsonConvert.SerializeObject(messages, Formatting.Indented), Encoding.UTF8);
+        }
 
-                ["OutpostNotFound"] = "{0} Плагин не смог найти Аванпост.",
-                ["BanditNotFound"] = "{0} Плагин не смог найти Лагерь бандитов.",
-                ["NoPermission"] = "{0} У вас нет прав на использование этой команды.",
+        private static Dictionary<string, string> BuildEnglishMessages() => new Dictionary<string, string>
+        {
+            ["OutpostTeleport"] = "Teleporting to Outpost in {0} seconds.\nType /{1} to cancel.",
+            ["BanditTeleport"] = "Teleporting to Bandit Camp in {0} seconds.\nType /{1} to cancel.",
+            ["TeleportSuccessOutpost"] = "You have successfully teleported to Outpost.",
+            ["TeleportSuccessBandit"] = "You have successfully teleported to Bandit Camp.",
+            ["NoActiveTeleport"] = "You are not preparing to teleport.\nType /{0} for Outpost\nType /{1} for Bandit Camp.",
+            ["AlreadyTeleporting"] = "You are already preparing to teleport.",
 
-                ["UpdateCheckStart"] = "{0} Проверка обновлений...",
-                ["UpdateCheckFailed"] = "{0} Проверка обновлений не удалась.",
-                ["UpdateRemoteInvalid"] = "{0} Удалённая сборка не является стабильной и была проигнорирована.",
-                ["UpdateLocalInvalid"] = "{0} Локальная версия некорректна. Проверка обновлений пропущена.",
-                ["UpdateCurrent"] = "{0} У вас уже установлена последняя стабильная версия: {1}.",
-                ["UpdateAvailable"] = "{0} Найдена новая версия: {1} -> {2}. Начинаю загрузку...",
-                ["UpdateDownloaded"] = "{0} Обновление успешно загружено. Файл сохранён: {1}",
-                ["UpdateWriteFailed"] = "{0} Не удалось записать файл обновления.",
-                ["UpdateBanner"] = "{0} Страница проекта: infunv.ru"
-            }, this, "ru");
+            ["Error: Seated"] = "You cannot teleport while seated.",
+            ["Error: NoBuildingPrivilege"] = "You cannot teleport without building privilege.",
+            ["Error: Wounded"] = "You cannot teleport while wounded.",
+            ["Error: Mounted"] = "You cannot teleport while mounted.",
+            ["Error: CargoShip"] = "You cannot teleport from the Cargo Ship.",
+            ["Error: Hostile"] = "You cannot teleport while hostile.\nHostility will reset in {0}.",
+            ["Error: Cooldown"] = "You cannot teleport yet.\nAvailable in {0}.",
+            ["Error: RaidBlocked"] = "You cannot teleport while raid blocked.",
+            ["Error: CombatBlocked"] = "You cannot teleport while combat blocked.",
+
+            ["TeleportCancelled"] = "Teleport cancelled.",
+            ["TeleportCancelledPlayerDamage"] = "Teleport cancelled due to player damage.",
+            ["TeleportCancelledFallDamage"] = "Teleport cancelled due to fall damage.",
+            ["TeleportCancelledDamage"] = "Teleport cancelled due to damage.",
+
+            ["OutpostNotFound"] = "Outpost spawn points were not found.",
+            ["BanditNotFound"] = "Bandit Camp spawn points were not found.",
+            ["NoPermission"] = "You do not have permission to use this command.",
+
+            ["UpdateCheckStart"] = "Checking for updates...",
+            ["UpdateCheckFailed"] = "Update check failed.",
+            ["UpdateRemoteInvalid"] = "Remote build is not a stable release and was ignored.",
+            ["UpdateLocalInvalid"] = "Local version is invalid. Update check skipped.",
+            ["UpdateCurrent"] = "You are already running the latest stable version: {0}.",
+            ["UpdateAvailable"] = "New version found: {0} -> {1}. Downloading now...",
+            ["UpdateDownloaded"] = "Update downloaded successfully. Saved to: {0}",
+            ["UpdateWriteFailed"] = "Failed to write the update file.",
+            ["UpdateBanner"] = "Project page: infunv.ru"
+        };
+
+        private static Dictionary<string, string> BuildRussianMessages() => new Dictionary<string, string>
+        {
+            ["OutpostTeleport"] = "Телепортация на Аванпост через {0} секунд.\nВведите /{1}, чтобы отменить телепортацию.",
+            ["BanditTeleport"] = "Телепортация в Лагерь бандитов через {0} секунд.\nВведите /{1}, чтобы отменить телепортацию.",
+            ["TeleportSuccessOutpost"] = "Вы успешно телепортировались на Аванпост.",
+            ["TeleportSuccessBandit"] = "Вы успешно телепортировались в Лагерь бандитов.",
+            ["NoActiveTeleport"] = "Вы не собираетесь телепортироваться.\nВведите /{0} для Аванпоста\nВведите /{1} для Лагеря бандитов.",
+            ["AlreadyTeleporting"] = "Вы уже собираетесь телепортироваться.",
+
+            ["Error: Seated"] = "Вы не можете телепортироваться, сидя в транспорте.",
+            ["Error: NoBuildingPrivilege"] = "Вы не можете телепортироваться без привилегии на строительство.",
+            ["Error: Wounded"] = "Вы не можете телепортироваться, будучи раненым.",
+            ["Error: Mounted"] = "Вы не можете телепортироваться, находясь верхом.",
+            ["Error: CargoShip"] = "Вы не можете телепортироваться с грузового корабля.",
+            ["Error: Hostile"] = "Вы не можете телепортироваться, пока отмечены как враждебный.\nСтатус враждебности снимут через {0}.",
+            ["Error: Cooldown"] = "Вы не можете телепортироваться ещё.\nТелепортация станет доступна через {0}.",
+            ["Error: RaidBlocked"] = "Вы не можете телепортироваться во время рейд-блока.",
+            ["Error: CombatBlocked"] = "Вы не можете телепортироваться во время боевого блока.",
+
+            ["TeleportCancelled"] = "Вы отменили телепортацию.",
+            ["TeleportCancelledPlayerDamage"] = "Телепортация отменена из-за получения урона от игрока.",
+            ["TeleportCancelledFallDamage"] = "Телепортация отменена из-за урона от падения.",
+            ["TeleportCancelledDamage"] = "Телепортация отменена, так как вы получили урон.",
+
+            ["OutpostNotFound"] = "Плагин не смог найти Аванпост.",
+            ["BanditNotFound"] = "Плагин не смог найти Лагерь бандитов.",
+            ["NoPermission"] = "У вас нет прав на использование этой команды.",
+
+            ["UpdateCheckStart"] = "Проверка обновлений...",
+            ["UpdateCheckFailed"] = "Проверка обновлений не удалась.",
+            ["UpdateRemoteInvalid"] = "Удалённая сборка не является стабильной и была проигнорирована.",
+            ["UpdateLocalInvalid"] = "Локальная версия некорректна. Проверка обновлений пропущена.",
+            ["UpdateCurrent"] = "У вас уже установлена последняя стабильная версия: {0}.",
+            ["UpdateAvailable"] = "Найдена новая версия: {0} -> {1}. Начинаю загрузку...",
+            ["UpdateDownloaded"] = "Обновление успешно загружено. Файл сохранён: {0}",
+            ["UpdateWriteFailed"] = "Не удалось записать файл обновления.",
+            ["UpdateBanner"] = "Страница проекта: infunv.ru"
+        };
+
+        private string GetDefaultMessage(string key, string playerId)
+        {
+            string language = lang.GetLanguage(playerId);
+            if (language == "ru" && _ruMessages != null && _ruMessages.TryGetValue(key, out string ru))
+                return ru;
+
+            return _enMessages != null && _enMessages.TryGetValue(key, out string en) ? en : key;
         }
 
         private string Lang(string key, string playerId, params object[] args)
         {
-            return string.Format(lang.GetMessage(key, this, playerId), args);
+            string msg = lang.GetMessage(key, this, playerId);
+            return FormatMessage(msg, key, playerId, args, useFallback: true);
+        }
+
+        private string FormatMessage(string msg, string key, string playerId, object[] args, bool useFallback)
+        {
+            bool hasArgs = args != null && args.Length > 0;
+            int placeholderCount = CountFormatPlaceholders(msg);
+
+            if (useFallback && ((!hasArgs && placeholderCount > 0) || (hasArgs && placeholderCount > args.Length)))
+                return FormatMessage(GetDefaultMessage(key, playerId), key, playerId, args, useFallback: false);
+
+            try
+            {
+                return hasArgs ? string.Format(msg, args) : msg;
+            }
+            catch (FormatException)
+            {
+                if (!useFallback)
+                    return msg;
+
+                return FormatMessage(GetDefaultMessage(key, playerId), key, playerId, args, useFallback: false);
+            }
+        }
+
+        private static int CountFormatPlaceholders(string format)
+        {
+            if (string.IsNullOrEmpty(format))
+                return 0;
+
+            int maxIndex = -1;
+            foreach (Match match in Regex.Matches(format, @"\{(\d+)\}"))
+            {
+                if (int.TryParse(match.Groups[1].Value, out int index) && index > maxIndex)
+                    maxIndex = index;
+            }
+
+            return maxIndex + 1;
         }
 
         #endregion
@@ -257,7 +338,6 @@ namespace Oxide.Plugins
 
         private const string PermOutpost = "recallhub.outpost";
         private const string PermBandit = "recallhub.bandit";
-        private const string PermNoCooldown = "recallhub.nocooldown";
 
         #endregion
 
@@ -278,12 +358,12 @@ namespace Oxide.Plugins
         {
             LoadPluginConfig();
             LoadDataFile();
+            RefreshLanguageFiles();
 
             PrintStartupBanner();
 
             permission.RegisterPermission(PermOutpost, this);
             permission.RegisterPermission(PermBandit, this);
-            permission.RegisterPermission(PermNoCooldown, this);
 
             cmd.AddChatCommand(configData.OutpostCommand, this, nameof(CmdOutpost));
             cmd.AddChatCommand(configData.BanditCommand, this, nameof(CmdBandit));
@@ -328,7 +408,6 @@ namespace Oxide.Plugins
 
         private void PrintStartupBanner()
         {
-            var prefix = Lang("Prefix", "0");
             Puts("==================================================");
             Puts($"RecallHub v{PluginVersion} loaded.");
             Puts($"Teleport system initialized.");
@@ -350,7 +429,7 @@ namespace Oxide.Plugins
                 return;
             }
 
-            Puts(Lang("UpdateCheckStart", "0", Lang("Prefix", "0")));
+            Puts($"[RecallHub] {Lang("UpdateCheckStart", "0")}");
 
             var headers = new Dictionary<string, string>
             {
@@ -362,7 +441,7 @@ namespace Oxide.Plugins
             {
                 if (code != 200 || string.IsNullOrWhiteSpace(response))
                 {
-                    Puts(Lang("UpdateCheckFailed", "0", Lang("Prefix", "0")));
+                    Puts($"[RecallHub] {Lang("UpdateCheckFailed", "0")}");
                     PrintWarning($"[RecallHub] HTTP {(code == 0 ? "no-response" : code.ToString())} while checking updates.");
                     return;
                 }
@@ -370,36 +449,36 @@ namespace Oxide.Plugins
                 string remoteVersionRaw = ExtractVersionFromSource(response);
                 if (string.IsNullOrWhiteSpace(remoteVersionRaw))
                 {
-                    Puts(Lang("UpdateCheckFailed", "0", Lang("Prefix", "0")));
+                    Puts($"[RecallHub] {Lang("UpdateCheckFailed", "0")}");
                     PrintWarning("[RecallHub] Could not detect a version string in the remote source.");
                     return;
                 }
 
                 if (IsDevVersion(remoteVersionRaw))
                 {
-                    PrintWarning(Lang("UpdateRemoteInvalid", "0", Lang("Prefix", "0")));
+                    PrintWarning($"[RecallHub] {Lang("UpdateRemoteInvalid", "0")}");
                     return;
                 }
 
                 if (!TryParseStableVersion(remoteVersionRaw, out var remoteVersion))
                 {
-                    PrintWarning(Lang("UpdateRemoteInvalid", "0", Lang("Prefix", "0")));
+                    PrintWarning($"[RecallHub] {Lang("UpdateRemoteInvalid", "0")}");
                     return;
                 }
 
                 if (!TryParseStableVersion(PluginVersion, out var localVersion))
                 {
-                    PrintWarning(Lang("UpdateLocalInvalid", "0", Lang("Prefix", "0")));
+                    PrintWarning($"[RecallHub] {Lang("UpdateLocalInvalid", "0")}");
                     return;
                 }
 
                 if (remoteVersion <= localVersion)
                 {
-                    Puts(Lang("UpdateCurrent", "0", Lang("Prefix", "0"), localVersion));
+                    Puts($"[RecallHub] {Lang("UpdateCurrent", "0", localVersion)}");
                     return;
                 }
 
-                Puts(Lang("UpdateAvailable", "0", Lang("Prefix", "0"), localVersion, remoteVersionRaw));
+                Puts($"[RecallHub] {Lang("UpdateAvailable", "0", localVersion, remoteVersionRaw)}");
 
                 TrySaveUpdate(response, remoteVersionRaw);
             }, this, Oxide.Core.Libraries.RequestMethod.GET, headers, configData.Update.TimeoutSeconds);
@@ -413,7 +492,7 @@ namespace Oxide.Plugins
 
             if (IsDevVersion(downloadedVersionRaw))
             {
-                PrintWarning(Lang("UpdateRemoteInvalid", "0", Lang("Prefix", "0")));
+                PrintWarning($"[RecallHub] {Lang("UpdateRemoteInvalid", "0")}");
                 return;
             }
 
@@ -431,7 +510,7 @@ namespace Oxide.Plugins
 
             if (downloadedVersion <= localVersion)
             {
-                Puts(Lang("UpdateCurrent", "0", Lang("Prefix", "0"), localVersion));
+                Puts($"[RecallHub] {Lang("UpdateCurrent", "0", localVersion)}");
                 return;
             }
 
@@ -459,12 +538,12 @@ namespace Oxide.Plugins
                 _updateJustApplied = true;
                 _lastUpdateCheckTime = DateTime.Now;
 
-                Puts(Lang("UpdateDownloaded", "0", Lang("Prefix", "0"), pluginPath));
+                Puts($"[RecallHub] {Lang("UpdateDownloaded", "0", pluginPath)}");
                 Puts("[RecallHub] Update saved. Waiting for Oxide compilation...");
             }
             catch (Exception ex)
             {
-                PrintWarning($"{Lang("UpdateWriteFailed", "0", Lang("Prefix", "0"))} {ex.Message}");
+                PrintWarning($"[RecallHub] {Lang("UpdateWriteFailed", "0")} {ex.Message}");
             }
         }
 
@@ -498,7 +577,7 @@ namespace Oxide.Plugins
             if (string.IsNullOrWhiteSpace(source))
                 return null;
 
-            // Main lookup: [Info("RecallHub", "whitecristafer", "1.0.3")]
+            // Main lookup: [Info("RecallHub", "whitecristafer", "1.0.4")]
             var match = Regex.Match(
                 source,
                 @"\[Info\(\s*""RecallHub""\s*,\s*""[^""]+""\s*,\s*""(?<version>[^""]+)""\s*\)\]",
@@ -745,55 +824,55 @@ namespace Oxide.Plugins
         {
             if (!HasPermission(player, PermOutpost))
             {
-                player.ChatMessage(Lang("NoPermission", player.UserIDString, Lang("Prefix", player.UserIDString)));
+                SendMessage(player, Lang("NoPermission", player.UserIDString));
                 return;
             }
 
             var result = CanTeleport(player, "outpost", true);
             if (result != null)
             {
-                player.ChatMessage(result);
+                SendMessage(player, result);
                 return;
             }
 
             StartTeleport(player, "outpost");
-            player.ChatMessage(Lang("OutpostTeleport", player.UserIDString, Lang("Prefix", player.UserIDString), configData.OutpostCountdown, configData.CancelCommand));
+            SendMessage(player, Lang("OutpostTeleport", player.UserIDString, configData.OutpostCountdown, configData.CancelCommand));
         }
 
         private void CmdBandit(BasePlayer player)
         {
             if (!HasPermission(player, PermBandit))
             {
-                player.ChatMessage(Lang("NoPermission", player.UserIDString, Lang("Prefix", player.UserIDString)));
+                SendMessage(player, Lang("NoPermission", player.UserIDString));
                 return;
             }
 
             var result = CanTeleport(player, "bandit", true);
             if (result != null)
             {
-                player.ChatMessage(result);
+                SendMessage(player, result);
                 return;
             }
 
             StartTeleport(player, "bandit");
-            player.ChatMessage(Lang("BanditTeleport", player.UserIDString, Lang("Prefix", player.UserIDString), configData.BanditCountdown, configData.CancelCommand));
+            SendMessage(player, Lang("BanditTeleport", player.UserIDString, configData.BanditCountdown, configData.CancelCommand));
         }
 
         private void CmdCancelTp(BasePlayer player)
         {
             if (!HasPermission(player, PermOutpost) && !HasPermission(player, PermBandit))
             {
-                player.ChatMessage(Lang("NoPermission", player.UserIDString, Lang("Prefix", player.UserIDString)));
+                SendMessage(player, Lang("NoPermission", player.UserIDString));
                 return;
             }
 
             if (!teleportTimers.ContainsKey(player.userID))
             {
-                player.ChatMessage(Lang("NoActiveTeleport", player.UserIDString, Lang("Prefix", player.UserIDString), configData.OutpostCommand, configData.BanditCommand));
+                SendMessage(player, Lang("NoActiveTeleport", player.UserIDString, configData.OutpostCommand, configData.BanditCommand));
                 return;
             }
 
-            CancelTeleport(player, Lang("TeleportCancelled", player.UserIDString, Lang("Prefix", player.UserIDString)));
+            CancelTeleport(player, Lang("TeleportCancelled", player.UserIDString));
         }
 
         #endregion
@@ -806,21 +885,18 @@ namespace Oxide.Plugins
                 return null;
 
             if (town == "outpost" && outpostSpawns.Count == 0)
-                return Lang("OutpostNotFound", player.UserIDString, Lang("Prefix", player.UserIDString));
+                return Lang("OutpostNotFound", player.UserIDString);
 
             if (town == "bandit" && banditSpawns.Count == 0)
-                return Lang("BanditNotFound", player.UserIDString, Lang("Prefix", player.UserIDString));
+                return Lang("BanditNotFound", player.UserIDString);
 
-            if (!HasPermission(player, PermNoCooldown))
+            int cooldown = town == "outpost" ? configData.OutpostCooldown : configData.BanditCooldown;
+            if (cooldown > 0 && storedData.Cooldowns.TryGetValue(player.userID, out int lastTime))
             {
-                int cooldown = town == "outpost" ? configData.OutpostCooldown : configData.BanditCooldown;
-                if (cooldown > 0 && storedData.Cooldowns.TryGetValue(player.userID, out int lastTime))
+                int remaining = lastTime + cooldown - GetUnix();
+                if (remaining > 0)
                 {
-                    int remaining = lastTime + cooldown - GetUnix();
-                    if (remaining > 0)
-                    {
-                        return Lang("Error: Cooldown", player.UserIDString, FormatDuration(remaining));
-                    }
+                    return Lang("Error: Cooldown", player.UserIDString, FormatDuration(remaining));
                 }
             }
 
@@ -860,7 +936,7 @@ namespace Oxide.Plugins
             }
 
             if (checkTimers && teleportTimers.ContainsKey(player.userID))
-                return Lang("AlreadyTeleporting", player.UserIDString, Lang("Prefix", player.UserIDString));
+                return Lang("AlreadyTeleporting", player.UserIDString);
 
             return null;
         }
@@ -878,7 +954,7 @@ namespace Oxide.Plugins
                 var result = CanTeleport(player, town, false);
                 if (result != null)
                 {
-                    player.ChatMessage(result);
+                    SendMessage(player, result);
                     teleportTimers.Remove(userId);
                     return;
                 }
@@ -894,7 +970,7 @@ namespace Oxide.Plugins
                 List<Vector3> spawns = town == "outpost" ? outpostSpawns : banditSpawns;
                 if (spawns.Count == 0)
                 {
-                    player.ChatMessage(Lang(town == "outpost" ? "OutpostNotFound" : "BanditNotFound", player.UserIDString, Lang("Prefix", player.UserIDString)));
+                    SendMessage(player, Lang(town == "outpost" ? "OutpostNotFound" : "BanditNotFound", player.UserIDString));
                     teleportTimers.Remove(userId);
                     return;
                 }
@@ -902,9 +978,10 @@ namespace Oxide.Plugins
                 Vector3 target = spawns[UnityEngine.Random.Range(0, spawns.Count)];
                 target.y += configData.TeleportOffsetY;
 
-                SafeTeleport(player, target);
+                DoTeleport(player, target);
 
-                if (!HasPermission(player, PermNoCooldown))
+                int cooldown = town == "outpost" ? configData.OutpostCooldown : configData.BanditCooldown;
+                if (cooldown > 0)
                 {
                     storedData.Cooldowns[player.userID] = GetUnix();
                     SaveDataFile();
@@ -913,46 +990,23 @@ namespace Oxide.Plugins
                 teleportTimers.Remove(userId);
 
                 string msgKey = town == "outpost" ? "TeleportSuccessOutpost" : "TeleportSuccessBandit";
-                player.ChatMessage(Lang(msgKey, player.UserIDString, Lang("Prefix", player.UserIDString)));
+                SendMessage(player, Lang(msgKey, player.UserIDString));
             });
 
             teleportTimers[userId] = timerObj;
         }
 
-        private void SafeTeleport(BasePlayer player, Vector3 position)
+        private void DoTeleport(BasePlayer player, Vector3 position)
         {
-            if (player == null || !player.IsValid())
+            if (player == null || !player.IsConnected)
                 return;
 
-            // Resetting the current states to avoid bugs
-            if (player.IsSleeping()) player.EndSleeping();
-            player.EnsureDismounted();
-            player.SetParent(null, true, true);
+            Effect.server.Run("assets/prefabs/misc/transferable/effects/teleport.prefab", player.transform.position, Vector3.up);
 
-            // Performing a physical transfer
             player.Teleport(position);
-
-            // Forcibly update triggers (so that the Safe Zone applies instantly and the turrets don't kill you)
-            player.ForceUpdateTriggers();
-
-            // We put the player to sleep for a second so that the client can load the floor textures
-            if (player.IsConnected)
-            {
-                player.StartSleeping();
-                timer.Once(1.5f, () =>
-                {
-                    if (player != null && player.IsSleeping())
-                    {
-                        player.EndSleeping();
-                    }
-                });
-            }
-
-            // Synchronize the position over the network
-            player.UpdateNetworkGroup();
             player.SendNetworkUpdateImmediate();
-            player.ClientRPCPlayer(null, player, "ForcePositionTo", position);
-            player.ClearEntityQueue();
+
+            Effect.server.Run("assets/prefabs/misc/transferable/effects/teleport.prefab", player.transform.position, Vector3.up);
         }
 
         private void CancelTeleport(BasePlayer player, string reason)
@@ -966,7 +1020,7 @@ namespace Oxide.Plugins
                 teleportTimers.Remove(player.userID);
             }
 
-            player.ChatMessage(reason);
+            SendMessage(player, reason);
         }
 
         #endregion
@@ -989,19 +1043,19 @@ namespace Oxide.Plugins
 
                 if (configData.CancelTpAnyDamage)
                 {
-                    CancelTeleport(player, Lang("TeleportCancelledDamage", player.UserIDString, Lang("Prefix", player.UserIDString)));
+                    CancelTeleport(player, Lang("TeleportCancelledDamage", player.UserIDString));
                     return;
                 }
 
                 if (configData.CancelTpPlayerDamage && info.Initiator is BasePlayer)
                 {
-                    CancelTeleport(player, Lang("TeleportCancelledPlayerDamage", player.UserIDString, Lang("Prefix", player.UserIDString)));
+                    CancelTeleport(player, Lang("TeleportCancelledPlayerDamage", player.UserIDString));
                     return;
                 }
 
                 if (configData.CancelTpFallDamage && info.damageTypes.Has(DamageType.Fall))
                 {
-                    CancelTeleport(player, Lang("TeleportCancelledFallDamage", player.UserIDString, Lang("Prefix", player.UserIDString)));
+                    CancelTeleport(player, Lang("TeleportCancelledFallDamage", player.UserIDString));
                 }
             });
         }
@@ -1009,6 +1063,15 @@ namespace Oxide.Plugins
         #endregion
 
         #region Helpers
+
+        private void SendMessage(BasePlayer player, string message)
+        {
+            if (player == null || string.IsNullOrEmpty(message))
+                return;
+
+            string final = $"{Prefix} {message}";
+            player.SendConsoleCommand("chat.add", 2, PluginIcon, final);
+        }
 
         private bool HasPermission(BasePlayer player, string perm) => player != null && permission.UserHasPermission(player.UserIDString, perm);
 
